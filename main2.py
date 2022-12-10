@@ -9,7 +9,7 @@ import json
 import time
 
 
-min_arb_percent=0.3
+
 
 def step_0():
     coin_json = get_coin_tickers()
@@ -32,6 +32,9 @@ def open_trading_pairs():
         structured_pairs = json.load(json_file)
     return structured_pairs
 
+min_arb=0.003
+starting_amount=100
+
 
 async def main2():
     structured_pairs= open_trading_pairs()
@@ -42,62 +45,16 @@ async def main2():
 
             task1, quotes_base = await get_price_for_t_pair(t_pair)
 
-            task2 = await check_arbitrage(task1)
-            if task2 == True: 
-                calc_triangular_arb_surface_rate(quotes_base, task1)
 
-                
-
-
-
-
-"""async def main2():
-        while True:
-            task= loop.create_task(step_2())
-            await asyncio.wait([task])
-            print(f'main', task)
-"""
-
-loop = asyncio.get_event_loop()
-loop.run_until_complete(main2())
-loop.close()
+            task2 = check_arbitrage(task1, min_arb)
+            print(task2)
+            if task2 is True: 
+                calc_triangular_arb_surface_rate(quotes_base, task1, starting_amount)
+            else:
+                None
+                #await asyncio.sleep(waitTime)
 
 
-
-
-"""
-        pair_1=get_quote(t_pair['pair_a'])
-        pair_2=get_quote(t_pair['pair_b'])
-        pair_3= get_quote(t_pair['pair_c'])"""
-"""
-        print(pair_2)
-
-        time.sleep(0.3)
-        prices_dict = get_price_for_t_pair(t_pair, prices_json)
-        surface_arb = calc_triangular_arb_surface_rate(t_pair, prices_dict)
-        if len(surface_arb) > 0:
-            print(surface_arb)
-        else: 
-            print("Fanculo")
-            real_rate_arb = get_depth_from_orderbook(surface_arb)
-            print(real_rate_arb, time.time)
-            time.sleep(1)
-
-            return(real_rate_arb)
-"""
-
-
-def orders(real_rate_arb):
-    if real_rate_arb is not None:
-        symbol = real_rate_arb['contract_1'].split("_")
-        coin1= symbol[0]+symbol[1]
-        market_price1 = rest_api.get_latest_crypto_quote(coin1, exchange="FTXU").close
-        print(market_price1)
-        return coin1, market_price1
-
-
-
-    rest_api.close_all_positions()
-    available_cash = float(rest_api.get_account().cash)
-    print(available_cash)
-    percent=0.1
+#loop = asyncio.get_event_loop()
+asyncio.run(main2())
+#loop.close()
