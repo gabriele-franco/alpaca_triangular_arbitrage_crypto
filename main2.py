@@ -4,7 +4,7 @@ import requests
 import asyncio
 from functions import get_quote, check_arb, waitTime, rest_api, get_account_data
 
-from tradingview import get_coin_tickers, collect_tradeables, structure_triangular_pairs, get_price_for_t_pair, calc_triangular_arb_surface_rate
+from tradingview import get_coin_tickers, collect_tradeables, structure_triangular_pairs, get_price_for_t_pair, check_arbitrage, calc_triangular_arb_surface_rate
 import json
 import time
 
@@ -25,20 +25,46 @@ def step_0():
     with open("tradable_pairs.json", "w") as fp:
         json.dump(tradable_pairs, fp)
 
-def step_2():
 
-    # Get Structured Pairs
+#open the file 
+def open_trading_pairs():
     with open("tradable_pairs.json") as json_file:
         structured_pairs = json.load(json_file)
+    return structured_pairs
 
+
+async def main2():
+    structured_pairs= open_trading_pairs()
     # Get Latest Surface Prices
     # Loop Through and Structure Price Information
-    for t_pair in structured_pairs:
-        task1 = get_quote(t_pair['combined'])
-        print(task1)
-          
+    while True:
+        for t_pair in structured_pairs:
 
-step_2()
+            task1, quotes_base = await get_price_for_t_pair(t_pair)
+
+            task2 = await check_arbitrage(task1)
+            if task2 == True: 
+                calc_triangular_arb_surface_rate(quotes_base, task1)
+
+                
+
+
+
+
+"""async def main2():
+        while True:
+            task= loop.create_task(step_2())
+            await asyncio.wait([task])
+            print(f'main', task)
+"""
+
+loop = asyncio.get_event_loop()
+loop.run_until_complete(main2())
+loop.close()
+
+
+
+
 """
         pair_1=get_quote(t_pair['pair_a'])
         pair_2=get_quote(t_pair['pair_b'])
@@ -59,7 +85,7 @@ step_2()
 
             return(real_rate_arb)
 """
-step_2()
+
 
 def orders(real_rate_arb):
     if real_rate_arb is not None:

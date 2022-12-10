@@ -3,7 +3,8 @@ import requests
 from functions import HEADERS, rest_api, API_KEY, API_SECRET_KEY
 import json
 import pandas as pd
-from functions import post_Alpaca_order, min_arb_percent
+from functions import post_Alpaca_order, min_arb_percent, rest_api
+import asyncio
 
 
 DATA_URL = 'https://data.alpaca.markets'
@@ -102,32 +103,131 @@ def structure_triangular_pairs(coin_list):
     return triangular_pairs_list
 
 
+def get_quote(symbol: str, prices):
+    '''
+    Get quote data from Alpaca API
+    '''
+ 
+    try:
+        # make the request
+            quote = requests.get('{0}/v1beta2/crypto/latest/trades?symbols={1}'.format(DATA_URL, symbol), headers=HEADERS)
+            prices[symbol] = quote.json()['trades'][symbol]['p']
+            # Status code 200 means the request was successful
+            if quote.status_code != 200:
+                print("Undesirable response from Alpaca! {}".format(quote.json()))
+                return False
+            else: 
+                return prices
+ 
+    except Exception as e:
+        print("There was an issue getting trade quote from Alpaca: {0}".format(e))
+        return False
 
-def get_price_for_t_pair(t_pair, prices_json):
+async def get_price_for_t_pair(t_pair):
 
     # Extract Pair Info
     pair_a = t_pair["pair_a"]
     pair_b = t_pair["pair_b"]
     pair_c = t_pair["pair_c"]
 
+    prices = {
+    pair_a : 1,
+    pair_b : 1,
+    pair_c : 1
+    }
     # Extract Price Information for Given Pairs
-    pair_a_p = float(prices_json[pair_a])
+    pair_a_p = get_quote(pair_a, prices)
+    pair_b_p = get_quote(pair_b, prices)
 
-    pair_b_p = float(prices_json[pair_b])
-
-    pair_c_p = float(prices_json[pair_c])
-
-
+    pair_c_p = get_quote(pair_c, prices)
+   
     # Output Dictionary
-    return {
-        "pair_a_price": pair_a_p,
-        "pair_b_price": pair_b_p,
-        "pair_c_price": pair_c_p,
-        }
+    return pair_c_p, t_pair
+
+
+async def check_arbitrage(prices):
+    # Extract the relevant pairs from the prices dictionary
+    df=[]
+    #ticker=[]
+    for i in prices: 
+        df.append(prices[i])
+        #ticker.append(i)
+
+
+   # Calculate the profit from triangular arbitrage
+    profit = (df[0] * df[2]) / df[1] - 1
+    print(profit)
+
+    # Check if the profit is higher than 0.3%
+    if profit > 0.003:
+        print("there is an arbitrage opportunity" )
+        return True
+    else:
+        print("None")
+        return False
+
+"""def execute_trades(trades, initial_budget,base_quotes ):
+    df=[]
+    tickers=[]
+    # Loop through the list of trades
+    for i in trades:
+        # Get the current price for each currency pair
+        df.append(trades[i])
+        tickers.append(i)
+    print(tickers)
+
+
+    PAIR1 = df[0]
+    print(F'Pair1',PAIR1)
+    PAIR3 = df[2]
+
+    PAIR2 = df[1]
+    DIV = PAIR1 / PAIR3
+    spread = abs(DIV - PAIR2)
+    QUANTITY1= initial_budget/PAIR1
+    QUANTITY21=QUANTITY1/PAIR2
+    QUANTITY22=QUANTITY1*PAIR2
+    
 
 
 
-def calc_triangular_arb_surface_rate(t_pair, prices_dict):
+
+    order1= post_Alpaca_order(tickers[0], QUANTITY1, "buy")
+    print(f'quantity1', QUANTITY1)
+
+    if order1.status_code == 200:
+        if base_quotes['a_base']== base_quotes['b_quote']:
+                
+            order2 = post_Alpaca_order(tickers[1], QUANTITY21, "buy")
+            print(f'order_buy', order2.content)
+            print(f'quantities21', QUANTITY21)
+            if order2.status_code == 200:
+                QUANTITY3=QUANTITY21*PAIR3
+                print(f'strategy 1',QUANTITY3)
+                order3 = post_Alpaca_order(tickers[2], QUANTITY3, "sell")
+        elif base_quotes['a_base'] ==base_quotes['b_base']:
+            order2 = post_Alpaca_order(tickers[1], QUANTITY22, "sell")
+            print(f'order2', order2.content)
+            if order2.status_code == 200:
+                QUANTITY3=QUANTITY21*PAIR3
+                print(f'strategy 1',QUANTITY3)
+                order3 = post_Alpaca_order(tickers[2], QUANTITY3, "sell")
+
+            else:
+                #post_Alpaca_order(tickers[0], QUANTITY1, "sell")
+                print("Bad Order 3")
+                exit()   
+
+        else:
+            post_Alpaca_order(tickers[0], QUANTITY1, "sell")
+            print("Bad Order 2")
+            exit()   
+    else:
+        print("Bad Order 1")
+        exit()   """
+
+# Calculate Surface Rate Arbitrage Opportunity
+def calc_triangular_arb_surface_rate(t_pair, prices):
 
     # Set Variables
     starting_amount = 1
@@ -153,11 +253,19 @@ def calc_triangular_arb_surface_rate(t_pair, prices_dict):
     pair_b = t_pair["pair_b"]
     pair_c = t_pair["pair_c"]
 
+    df=[]
+    tickers=[]
+    # Loop through the list of trades
+    for i in prices:
+        # Get the current price for each currency pair
+        df.append(prices[i])
+        tickers.append(i)
+    
+
     # Extract Price Information
-    a_p = prices_dict["pair_a_price"]
-    b_p = prices_dict["pair_b_price"]
-    c_p = prices_dict["pair_c_price"]
-    c_bid = prices_dict["pair_c_bid"]
+    a_p = df[0]
+    b_p = df[1]
+    c_p = df[2]
 
     # Set directions and loop through
     direction_list = ["forward", "reverse"]
@@ -214,12 +322,13 @@ def calc_triangular_arb_surface_rate(t_pair, prices_dict):
                 # If b_base (acquired coin) matches c_quote
                 if b_base == c_quote:
                     swap_3 = c_quote
-                    swap_3_rate = c_bid
+                    swap_3_rate = c_p
                     direction_trade_3 = "quote_to_base"
                     contract_3 = pair_c
 
                 acquired_coin_t3 = acquired_coin_t2 * swap_3_rate
                 calculated = 1
+                print("scenario1")
 
         # SCENARIO 2 Check if a_quote (acquired_coin) matches b_base
         if direction == "forward":
@@ -239,9 +348,10 @@ def calc_triangular_arb_surface_rate(t_pair, prices_dict):
                 # If b_quote (acquired coin) matches c_quote
                 if b_quote == c_quote:
                     swap_3 = c_quote
-                    swap_3_rate = c_bid
+                    swap_3_rate = c_p
                     direction_trade_3 = "quote_to_base"
                     contract_3 = pair_c
+                print("scenario2")
 
                 acquired_coin_t3 = acquired_coin_t2 * swap_3_rate
                 calculated = 1
@@ -249,28 +359,74 @@ def calc_triangular_arb_surface_rate(t_pair, prices_dict):
         # SCENARIO 3 Check if a_quote (acquired_coin) matches c_quote
         if direction == "forward":
             if a_quote == c_quote and calculated == 0:
-                swap_2_rate = c_bid
+                swap_2_rate = c_p
                 acquired_coin_t2 = acquired_coin_t1 * swap_2_rate
                 direction_trade_2 = "quote_to_base"
                 contract_2 = pair_c
 
-                # If c_base (acquired coin) matches b_base
-                if c_base == b_base:
-                    swap_3 = b_base
-                    swap_3_rate = 1 / b_p
-                    direction_trade_3 = "base_to_quote"
-                    contract_3 = pair_b
 
-                # If c_base (acquired coin) matches b_quote
+                # not intuitive c_base (acquired coin) matches b_quote
                 if c_base == b_quote:
                     swap_3 = b_quote
                     swap_3_rate = b_p
                     direction_trade_3 = "quote_to_base"
                     contract_3 = pair_b
+                    acquired_coin_t3 = acquired_coin_t2 * swap_3_rate
+                    calculated = 1
+                    order1 = post_Alpaca_order(tickers[0], acquired_coin_t2, "buy")
+                    if order1.status_code == 200:
+                        print(order1.content)
+                        order2 = post_Alpaca_order(tickers[1], acquired_coin_t2, "sell")
+                        if order2.status_code == 200:
+                            print(order2.content)
+                            order3 = post_Alpaca_order(tickers[2], acquired_coin_t3, "sell")
+                            if order3.status_code == 200:
+                                print(order3.content)
+                                print("Not intuitive STRATEGY")
+                            else:
+                                post_Alpaca_order(tickers[1], acquired_coin_t2, "buy")
+                                print("Bad Order 3")
+                                exit()
+                        else:
+                            post_Alpaca_order(tickers[0], acquired_coin_t2, "sell")
+                            print("Bad Order 2")
+                            exit()
+                    else:
+                        print("Bad Order 1")
+                        exit()
+                #NORMAL If c_base (acquired coin) matches b_base
+                if c_base == b_base:
+                    swap_3 = b_base
+                    swap_3_rate = 1 / b_p
+                    direction_trade_3 = "base_to_quote"
+                    contract_3 = pair_b
+                    acquired_coin_t3 = acquired_coin_t2 * swap_3_rate
+                    calculated = 1
+                    order1 = post_Alpaca_order(tickers[0], acquired_coin_t2, "buy")
+                    if order1.status_code == 200:
+                        print(order1.content)
+                        order2 = post_Alpaca_order(tickers[1], acquired_coin_t3, "buy")
+                        if order2.status_code == 200:
+                            print(order2.content)
+                            order3 = post_Alpaca_order(tickers[2], acquired_coin_t3, "sell")
+                            if order3.status_code == 200:
+                                print(order3.content)
+                                print("NORMAL STRATEGY")
+                            else:
+                                post_Alpaca_order(tickers[1], acquired_coin_t3, "sell")
+                                print("Bad Order 3")
+                                exit()
+                        else:
+                            post_Alpaca_order(tickers[1], acquired_coin_t2, "sell")
+                            print("Bad Order 2")
+                            exit()
+                    else:
+                        print("Bad Order 1")
+                        exit()
+                                
+            
 
-                acquired_coin_t3 = acquired_coin_t2 * swap_3_rate
-                calculated = 1
-
+                print("scenario3")
         # SCENARIO 4 Check if a_quote (acquired_coin) matches c_base
         if direction == "forward":
             if a_quote == c_base and calculated == 0:
@@ -292,149 +448,18 @@ def calc_triangular_arb_surface_rate(t_pair, prices_dict):
                     swap_3_rate = b_p
                     direction_trade_3 = "quote_to_base"
                     contract_3 = pair_b
-
+                print("scenario4")
                 acquired_coin_t3 = acquired_coin_t2 * swap_3_rate
                 calculated = 1
 
-        """  REVERSE """
-        # SCENARIO 1 Check if a_base (acquired_coin) matches b_quote
-        if direction == "reverse":
-            if a_base == b_quote and calculated == 0:
-                swap_2_rate = b_p
-                acquired_coin_t2 = acquired_coin_t1 * swap_2_rate
-                direction_trade_2 = "quote_to_base"
-                contract_2 = pair_b
 
-                # If b_base (acquired coin) matches c_base
-                if b_base == c_base:
-                    swap_3 = c_base
-                    swap_3_rate = 1 / c_p
-                    direction_trade_3 = "base_to_quote"
-                    contract_3 = pair_c
+base_quotes={'a_base': 'SOL', 'b_base': 'SOL', 'c_base': 'USDT', 'a_quote': 'USD', 'b_quote': 'USDT', 'c_quote': 'USD', 'pair_a': 'SOL/USD', 'pair_b': 'SOL/USDT', 'pair_c': 'USDT/USD', 'combined': 'SOL/USD,SOL/USDT,USDT/USD'}
+#{'a_base': 'USDT', 'b_base': 'AAVE', 'c_base': 'AAVE', 'a_quote': 'USD', 'b_quote': 'USDT', 'c_quote': 'USD', 'pair_a': 'USDT/USD', 'pair_b': 'AAVE/USDT', 'pair_c': 'AAVE/USD', 'combined': 'USDT/USD,AAVE/USDT,AAVE/USD'}
 
-                # If b_base (acquired coin) matches c_quote
-                if b_base == c_quote:
-                    swap_3 = c_quote
-                    swap_3_rate = c_bid
-                    direction_trade_3 = "quote_to_base"
-                    contract_3 = pair_c
 
-                acquired_coin_t3 = acquired_coin_t2 * swap_3_rate
-                calculated = 1
+prices={'SOL/USD': 13.5848, 'SOL/USDT': 13.578, 'USDT/USD': 1}
+#{'USDT/USD': 1, 'AAVE/USDT': 61.72, 'AAVE/USD': 61.71}
 
-        # SCENARIO 2 Check if a_base (acquired_coin) matches b_base
-        if direction == "reverse":
-            if a_base == b_base and calculated == 0:
-                swap_2_rate = 1 / b_p
-                acquired_coin_t2 = acquired_coin_t1 * swap_2_rate
-                direction_trade_2 = "base_to_quote"
-                contract_2 = pair_b
-
-                # If b_quote (acquired coin) matches c_base
-                if b_quote == c_base:
-                    swap_3 = c_base
-                    swap_3_rate = 1 / c_p
-                    direction_trade_3 = "base_to_quote"
-                    contract_3 = pair_c
-
-                # If b_quote (acquired coin) matches c_quote
-                if b_quote == c_quote:
-                    swap_3 = c_quote
-                    swap_3_rate = c_bid
-                    direction_trade_3 = "quote_to_base"
-                    contract_3 = pair_c
-
-                acquired_coin_t3 = acquired_coin_t2 * swap_3_rate
-                calculated = 1
-
-        # SCENARIO 3 Check if a_base (acquired_coin) matches c_quote
-        if direction == "reverse":
-            if a_base == c_quote and calculated == 0:
-                swap_2_rate = c_bid
-                acquired_coin_t2 = acquired_coin_t1 * swap_2_rate
-                direction_trade_2 = "quote_to_base"
-                contract_2 = pair_c
-
-                # If c_base (acquired coin) matches b_base
-                if c_base == b_base:
-                    swap_3 = b_base
-                    swap_3_rate = 1 / b_p
-                    direction_trade_3 = "base_to_quote"
-                    contract_3 = pair_b
-
-                # If c_base (acquired coin) matches b_quote
-                if c_base == b_quote:
-                    swap_3 = b_quote
-                    swap_3_rate = b_p
-                    direction_trade_3 = "quote_to_base"
-                    contract_3 = pair_b
-
-                acquired_coin_t3 = acquired_coin_t2 * swap_3_rate
-                calculated = 1
-
-        # SCENARIO 4 Check if a_base (acquired_coin) matches c_base
-        if direction == "reverse":
-            if a_base == c_base and calculated == 0:
-                swap_2_rate = 1 / c_p
-                acquired_coin_t2 = acquired_coin_t1 * swap_2_rate
-                direction_trade_2 = "base_to_quote"
-                contract_2 = pair_c
-
-                # If c_quote (acquired coin) matches b_base
-                if c_quote == b_base:
-                    swap_3 = b_base
-                    swap_3_rate = 1 / b_p
-                    direction_trade_3 = "base_to_quote"
-                    contract_3 = pair_b
-
-                # If c_quote (acquired coin) matches b_quote
-                if c_quote == b_quote:
-                    swap_3 = b_quote
-                    swap_3_rate = b_p
-                    direction_trade_3 = "quote_to_base"
-                    contract_3 = pair_b
-
-                acquired_coin_t3 = acquired_coin_t2 * swap_3_rate
-                calculated = 1
-
-        """ PROFIT LOSS OUTPUT """
-
-        # Profit and Loss Calculations
-        profit_loss = acquired_coin_t3 - starting_amount
-        profit_loss_perc = (profit_loss / starting_amount) * 100 if profit_loss != 0 else 0
-
-        # Trade Descriptions
-        trade_description_1 = f"Start with {swap_1} of {starting_amount}. Swap at {swap_1_rate} for {swap_2} acquiring {acquired_coin_t1}."
-        trade_description_2 = f"Swap {acquired_coin_t1} of {swap_2} at {swap_2_rate} for {swap_3} acquiring {acquired_coin_t2}."
-        trade_description_3 = f"Swap {acquired_coin_t2} of {swap_3} at {swap_3_rate} for {swap_1} acquiring {acquired_coin_t3}."
-
-        # Output Results
-        if profit_loss_perc > min_surface_rate:
-            surface_dict = {
-                "swap_1": swap_1,
-                "swap_2": swap_2,
-                "swap_3": swap_3,
-                "contract_1": contract_1,
-                "contract_2": contract_2,
-                "contract_3": contract_3,
-                "direction_trade_1": direction_trade_1,
-                "direction_trade_2": direction_trade_2,
-                "direction_trade_3": direction_trade_3,
-                "starting_amount": starting_amount,
-                "acquired_coin_t1": acquired_coin_t1,
-                "acquired_coin_t2": acquired_coin_t2,
-                "acquired_coin_t3": acquired_coin_t3,
-                "swap_1_rate": swap_1_rate,
-                "swap_2_rate": swap_2_rate,
-                "swap_3_rate": swap_3_rate,
-                "profit_loss": profit_loss,
-                "profit_loss_perc": profit_loss_perc,
-                "direction": direction,
-                "trade_description_1": trade_description_1,
-                "trade_description_2": trade_description_2,
-                "trade_description_3": trade_description_3
-            }
-
-            return surface_dict
-
-    return surface_dict
+initial_budget= 100
+#execute_trades(prices, initial_budget, base_quotes)
+"""calc_triangular_arb_surface_rate(base_quotes, prices)"""
