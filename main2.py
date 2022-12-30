@@ -2,8 +2,7 @@ import alpaca_trade_api as tradeapi
 from alpaca_trade_api import  REST
 import requests
 import asyncio
-from functions import get_quote, check_arb, waitTime, rest_api, get_account_data
-
+from functions import get_quote, check_arb, waitTime, rest_api
 from tradingview import get_coin_tickers, collect_tradeables, structure_triangular_pairs, get_price_for_t_pair, check_arbitrage, calc_triangular_arb_surface_rate
 import json
 import time
@@ -32,8 +31,8 @@ def open_trading_pairs():
         structured_pairs = json.load(json_file)
     return structured_pairs
 
-min_arb=0.003
-starting_amount=100
+min_arb=0.005
+starting_amount= 1000
 
 
 async def main2():
@@ -42,7 +41,7 @@ async def main2():
     # Loop Through and Structure Price Information
     while True:
         for t_pair in structured_pairs:
-
+            print(t_pair)
             task1, quotes_base = await get_price_for_t_pair(t_pair)
 
 
@@ -55,6 +54,6 @@ async def main2():
                 #await asyncio.sleep(waitTime)
 
 
-#loop = asyncio.get_event_loop()
+loop = asyncio.get_event_loop()
 asyncio.run(main2())
-#loop.close()
+loop.close()

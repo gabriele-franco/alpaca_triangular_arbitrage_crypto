@@ -1,12 +1,12 @@
 from math import floor
 import alpaca_trade_api as tradeapi
-from alpaca_trade_api import StreamConn, REST
+from alpaca_trade_api import  REST
 import requests
 import asyncio
 import json
 
-API_KEY="PK90ZGBIDL4SPDOQNWEV"
-API_SECRET_KEY="Fxx8vj0KZlZnWUGbFdSxOSuuAWAJA9hPALXJGYuZ"
+API_KEY="PKSRFVCIRFP7I4KU38AW"
+API_SECRET_KEY="4yKitKEsNOUA6g2JHEv1M5IUMkmGpeocpz2DDGwA"
 
 HEADERS = {'APCA-API-KEY-ID': API_KEY,
            'APCA-API-SECRET-KEY': API_SECRET_KEY}
@@ -16,9 +16,8 @@ base_url= "https://paper-api.alpaca.markets"
 ALPACA_BASE_URL=base_url
 
 rest_api= REST(API_KEY, API_SECRET_KEY, base_url)
-
 waitTime = 10
-min_arb_percent = 0.001
+min_arb_percent = 0.005
 
 
 prices = {
@@ -37,15 +36,19 @@ async def get_quote(symbol: str):
         # make the request
             quote = requests.get('{0}/v1beta2/crypto/latest/trades?symbols={1}'.format(DATA_URL, symbol), headers=HEADERS)
             prices[symbol] = quote.json()['trades'][symbol]['p']
-            print(f'prices', prices)
+            print(f'prices', quote)
             # Status code 200 means the request was successful
             if quote.status_code != 200:
                 print("Undesirable response from Alpaca! {}".format(quote.json()))
                 return False
+            else: 
+                return prices
  
     except Exception as e:
         print("There was an issue getting trade quote from Alpaca: {0}".format(e))
         return False
+
+        
 
 def post_Alpaca_order(symbol, qty, side):
     '''
@@ -76,9 +79,9 @@ async def check_arb():
     BTC = prices['BTC/USD']
     ETHBTC = prices['ETH/BTC']
     DIV = ETH / BTC
-    spread = abs(DIV - ETHBTC)
-    BUY_ETH = 10000 / ETH
-    BUY_BTC = 10000 / BTC
+    spread = abs(DIV - ETHBTC)/ETHBTC
+    BUY_ETH = 100 / ETH
+    BUY_BTC = 100 / BTC
     BUY_ETHBTC = BUY_BTC / ETHBTC
 
     SELL_ETHBTC = BUY_ETH / ETHBTC
@@ -95,8 +98,8 @@ async def check_arb():
         order1 = post_Alpaca_order("BTCUSD", BUY_BTC, "buy")
         if order1.status_code == 200:
             #from BTC to ETH
-            order2 = post_Alpaca_order("ETH/BTC", BUY_ETHBTC, "buy")
-            print(f'order 2',order2._content, BUY_ETHBTC)
+            order2 = post_Alpaca_order(symbol="ETH/BTC", qty=float(BUY_ETHBTC), side="buy")
+            print(f'order 2',order2.content, BUY_ETHBTC)
             if order2.status_code == 200:
                 #from ETH to USD
                 order3 = post_Alpaca_order("ETHUSD", BUY_ETHBTC, "sell")
@@ -148,7 +151,4 @@ async def check_arb():
 
 
 
-def get_account_data():
-    account=rest_api.get_account
-    cash=account
-    return cash
+
